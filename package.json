@@ -1,0 +1,55 @@
+{
+  "name": "depguard",
+  "version": "0.1.0",
+  "description": "Universal dependency health scanner CLI for JavaScript ecosystems",
+  "type": "module",
+  "bin": {
+    "depguard": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "dependency",
+    "security",
+    "audit",
+    "outdated",
+    "cli",
+    "npm",
+    "pnpm",
+    "yarn",
+    "bun",
+    "monorepo",
+    "depguard",
+    "vulnerability",
+    "deprecated"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.3",
+    "commander": "^12.0.0",
+    "fast-glob": "^3.3.2",
+    "ora": "^8.1.0",
+    "semver": "^7.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/semver": "^7.5.8",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
