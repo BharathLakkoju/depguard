@@ -4,6 +4,9 @@ import { createProgram } from "./cli/program.js";
 import { detectProjectInfo } from "./detector/index.js";
 import { runScan } from "./scanner/index.js";
 import { analyzeDependencies, computeSummary } from "./analyzers/index.js";
+import { scanTransitiveDeps } from "./scanner/transitive.js";
+import { scanPeerDeps } from "./scanner/peers.js";
+import { scanHoistedDeps, countPhantomPackages } from "./scanner/hoisted.js";
 import { generateReport } from "./reporters/index.js";
 import { generateFixSuggestions } from "./fixers/index.js";
 import type { ScanOptions, ScanResult } from "./types/index.js";
@@ -39,6 +42,9 @@ async function scanDirectory(
       packageManager: "unknown",
       directory,
       dependencies: [],
+      subDependencyIssues: [],
+      peerDependencyIssues: [],
+      hoistedIssues: [],
       scanDate: new Date().toISOString(),
       summary: {
         total: 0,
@@ -50,13 +56,20 @@ async function scanDirectory(
         high: 0,
         moderate: 0,
         low: 0,
+        optionalScanned: 0,
+        bundledScanned: 0,
+        transitiveVulnerable: 0,
+        peerMissing: 0,
+        peerIncompatible: 0,
+        hoistedVulnerable: 0,
+        phantomCount: 0,
       },
       errors,
       suggestions: [],
     };
   }
 
-  // Run package-manager-specific scanner
+  // ── Run package-manager-specific scanner ──────────────────────────────────
   let rawData;
   try {
     rawData = await runScan(directory, projectInfo.packageManager, {
@@ -69,15 +82,32 @@ async function scanDirectory(
     rawData = { outdated: [], vulnerabilities: [] };
   }
 
-  // Enrich with vulnerability / deprecation / maintenance data
+  // ── Enrich direct deps (vuln / deprecation / maintenance) ─────────────────
   const dependencies = await analyzeDependencies(rawData, {
     deep: options.deep,
     ignore: options.ignore,
     auditOnly: options.auditOnly,
   });
 
+  // ── Extended layer scans (only when --deep is requested) ───────────────────
+  const subDependencyIssues = options.deep
+    ? scanTransitiveDeps(directory, rawData.vulnerabilities)
+    : [];
+
+  const peerDependencyIssues = options.deep ? scanPeerDeps(directory) : [];
+
+  const hoistedIssues = options.deep
+    ? scanHoistedDeps(directory, rawData.vulnerabilities)
+    : [];
+  const phantomCount = options.deep ? countPhantomPackages(directory) : 0;
+
+  // ── Fix suggestions ───────────────────────────────────────────────────────
   const suggestions = generateFixSuggestions(
     dependencies,
+    subDependencyIssues,
+    peerDependencyIssues,
+    hoistedIssues,
+    phantomCount,
     projectInfo.packageManager,
   );
 
@@ -86,8 +116,17 @@ async function scanDirectory(
     packageManager: projectInfo.packageManager,
     directory,
     dependencies,
+    subDependencyIssues,
+    peerDependencyIssues,
+    hoistedIssues,
     scanDate: new Date().toISOString(),
-    summary: computeSummary(dependencies),
+    summary: computeSummary(
+      dependencies,
+      subDependencyIssues,
+      peerDependencyIssues,
+      hoistedIssues,
+      phantomCount,
+    ),
     errors,
     suggestions,
   };
@@ -114,7 +153,6 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
   };
 
   const silent = options.json || options.markdown;
-
   const spinner = silent
     ? null
     : ora({ text: chalk.cyan("Detecting project…"), spinner: "dots" }).start();
@@ -156,7 +194,7 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
         );
       }
     } else {
-      // ── Single-project mode ────────────────────────────────────────────────
+      // ── Single-project mode ──────────────────────────────────────────────
       const scanSpinner = silent
         ? null
         : ora({
@@ -169,7 +207,7 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
 
       scanSpinner?.succeed(
         chalk.green(
-          `Scan complete — ${result.dependencies.length} dependencies analysed`,
+          `Scan complete — ${result.dependencies.length} direct deps analysed`,
         ),
       );
     }
@@ -226,14 +264,12 @@ function addSharedFlags(
 async function main(): Promise<void> {
   const program = createProgram();
 
-  // ── Default command: scan current directory ───────────────────────────────
   addSharedFlags(program)
     .option("--workspace", "Scan all workspaces in a monorepo")
     .action(async (opts: CliOpts) => {
       await performScan(".", opts);
     });
 
-  // ── scan [directory] ──────────────────────────────────────────────────────
   addSharedFlags(
     program
       .command("scan [directory]")
@@ -241,19 +277,29 @@ async function main(): Promise<void> {
   )
     .option("--workspace", "Scan all workspaces in a monorepo")
     .option("--deep", "Include transitive (indirect) dependencies")
-    .action(async (directory: string | undefined, opts: CliOpts) => {
-      await performScan(directory ?? ".", opts);
+    .action(async (directory: string | undefined, opts: CliOpts, cmd) => {
+      // Shared flags (--json, --markdown, etc.) are defined on the root program
+      // too, so Commander may consume them there. Merge parent opts to ensure
+      // all flags are available regardless of where they were parsed.
+      const allOpts: CliOpts = {
+        ...((cmd.parent?.opts() as CliOpts | undefined) ?? {}),
+        ...opts,
+      };
+      await performScan(directory ?? ".", allOpts);
     });
 
-  // ── audit ─────────────────────────────────────────────────────────────────
   addSharedFlags(
     program
       .command("audit")
       .description(
         "Security-only scan — vulnerabilities only, skips outdated/stale checks",
       ),
-  ).action(async (opts: CliOpts) => {
-    await performScan(".", { ...opts, auditOnly: true });
+  ).action(async (opts: CliOpts, cmd) => {
+    const allOpts: CliOpts = {
+      ...((cmd.parent?.opts() as CliOpts | undefined) ?? {}),
+      ...opts,
+    };
+    await performScan(".", { ...allOpts, auditOnly: true });
   });
 
   await program.parseAsync(process.argv);

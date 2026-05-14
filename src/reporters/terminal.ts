@@ -5,6 +5,10 @@ import type {
   DependencyInfo,
   Severity,
   FixSuggestion,
+  SubDependencyIssue,
+  PeerDependencyIssue,
+  HoistedDepIssue,
+  DepType,
 } from "../types/index.js";
 
 const RULE = chalk.gray("─".repeat(60));
@@ -16,7 +20,7 @@ export function renderTerminalReport(results: ScanResult[]): void {
   for (const result of results) renderResult(result);
 }
 
-// ─── Per-Result Rendering ─────────────────────────────────────────────────────
+// ─── Per-Result ───────────────────────────────────────────────────────────────
 
 function renderResult(result: ScanResult): void {
   const { dependencies, summary, errors } = result;
@@ -40,30 +44,46 @@ function renderResult(result: ScanResult): void {
     for (const e of errors) console.log(chalk.red(`  ⚠  ${e}`));
   }
 
-  if (dependencies.length === 0) {
-    console.log("");
-    console.log(chalk.bold.green("  ✔  All dependencies look healthy!"));
-    console.log("");
-    console.log(RULE);
-    return;
-  }
-
   const vulnDeps = dependencies.filter((d) => d.vulnerabilities.length > 0);
   const deprecatedDeps = dependencies.filter((d) => d.deprecated);
   const outdatedDeps = dependencies.filter((d) => d.updateType !== "none");
   const staleDeps = dependencies.filter((d) => d.stale || d.archived);
 
-  if (vulnDeps.length > 0) renderVulnerabilities(vulnDeps);
-  if (deprecatedDeps.length > 0) renderDeprecated(deprecatedDeps);
-  if (outdatedDeps.length > 0) renderOutdated(outdatedDeps);
-  if (staleDeps.length > 0) renderMaintenance(staleDeps);
+  const hasDirectIssues =
+    vulnDeps.length +
+      deprecatedDeps.length +
+      outdatedDeps.length +
+      staleDeps.length >
+    0;
+  const hasExtended =
+    result.subDependencyIssues.length > 0 ||
+    result.peerDependencyIssues.length > 0 ||
+    result.hoistedIssues.length > 0;
+
+  if (!hasDirectIssues && !hasExtended) {
+    console.log("");
+    console.log(chalk.bold.green("  ✔  All dependencies look healthy!"));
+    console.log("");
+    console.log(RULE);
+  } else {
+    if (vulnDeps.length > 0) renderVulnerabilities(vulnDeps);
+    if (deprecatedDeps.length > 0) renderDeprecated(deprecatedDeps);
+    if (outdatedDeps.length > 0) renderOutdated(outdatedDeps);
+    if (staleDeps.length > 0) renderMaintenance(staleDeps);
+
+    if (result.subDependencyIssues.length > 0)
+      renderTransitive(result.subDependencyIssues);
+    if (result.peerDependencyIssues.length > 0)
+      renderPeerDeps(result.peerDependencyIssues);
+    if (result.hoistedIssues.length > 0) renderHoisted(result.hoistedIssues);
+  }
 
   renderSummary(summary);
 
   if (result.suggestions.length > 0) renderFixSuggestions(result.suggestions);
 }
 
-// ─── Section Renderers ────────────────────────────────────────────────────────
+// ─── Direct dep sections ──────────────────────────────────────────────────────
 
 function renderVulnerabilities(deps: DependencyInfo[]): void {
   console.log("");
@@ -73,22 +93,21 @@ function renderVulnerabilities(deps: DependencyInfo[]): void {
   for (const dep of deps) {
     console.log("");
     console.log(
-      "  " + chalk.bold.white(dep.name) + chalk.gray(`@${dep.current}`),
+      "  " +
+        chalk.bold.white(dep.name) +
+        chalk.gray(`@${dep.current}`) +
+        "  " +
+        depTypeBadge(dep.depType),
     );
     for (const vuln of dep.vulnerabilities) {
-      const badge = sevBadge(vuln.severity);
-      console.log(`    ${badge}  ${chalk.white(vuln.title)}`);
-      if (vuln.affectedVersions && vuln.affectedVersions !== "unknown") {
+      console.log(`    ${sevBadge(vuln.severity)}  ${chalk.white(vuln.title)}`);
+      if (vuln.affectedVersions && vuln.affectedVersions !== "unknown")
         console.log(
           chalk.gray(`             Affected : ${vuln.affectedVersions}`),
         );
-      }
-      if (vuln.fixedVersion) {
+      if (vuln.fixedVersion)
         console.log(chalk.gray(`             Fixed in : ${vuln.fixedVersion}`));
-      }
-      if (vuln.url) {
-        console.log(chalk.gray(`             ${vuln.url}`));
-      }
+      if (vuln.url) console.log(chalk.gray(`             ${vuln.url}`));
     }
   }
   console.log("");
@@ -102,7 +121,11 @@ function renderDeprecated(deps: DependencyInfo[]): void {
   for (const dep of deps) {
     console.log("");
     console.log(
-      "  " + chalk.bold.white(dep.name) + chalk.gray(`@${dep.current}`),
+      "  " +
+        chalk.bold.white(dep.name) +
+        chalk.gray(`@${dep.current}`) +
+        "  " +
+        depTypeBadge(dep.depType),
     );
     const msg = dep.deprecationMessage ?? "Deprecated by maintainers";
     console.log(
@@ -122,13 +145,13 @@ function renderOutdated(deps: DependencyInfo[]): void {
       chalk.bold.white("Package"),
       chalk.bold.white("Current"),
       chalk.bold.white("Latest"),
-      chalk.bold.white("Type"),
+      chalk.bold.white("Update"),
+      chalk.bold.white("Scope"),
     ],
-    colWidths: [32, 14, 14, 10],
+    colWidths: [28, 12, 12, 9, 11],
     style: { head: [], border: ["gray"] },
   });
 
-  // Sort: major → minor → patch
   const sorted = [...deps].sort((a, b) => {
     const o = { major: 0, minor: 1, patch: 2, none: 3 };
     return o[a.updateType] - o[b.updateType];
@@ -136,12 +159,13 @@ function renderOutdated(deps: DependencyInfo[]): void {
 
   for (const dep of sorted) {
     const name =
-      dep.name.length > 28 ? dep.name.slice(0, 25) + "..." : dep.name;
+      dep.name.length > 24 ? dep.name.slice(0, 21) + "..." : dep.name;
     table.push([
       chalk.white(name),
       chalk.gray(dep.current),
       chalk.green(dep.latest),
       updateBadge(dep.updateType),
+      depTypeBadge(dep.depType),
     ]);
   }
 
@@ -157,7 +181,11 @@ function renderMaintenance(deps: DependencyInfo[]): void {
   for (const dep of deps) {
     console.log("");
     console.log(
-      "  " + chalk.bold.white(dep.name) + chalk.gray(`@${dep.current}`),
+      "  " +
+        chalk.bold.white(dep.name) +
+        chalk.gray(`@${dep.current}`) +
+        "  " +
+        depTypeBadge(dep.depType),
     );
     if (dep.stale && dep.lastPublished) {
       const date = new Date(dep.lastPublished);
@@ -171,12 +199,114 @@ function renderMaintenance(deps: DependencyInfo[]): void {
     } else if (dep.stale) {
       console.log(chalk.magenta("    No recent releases"));
     }
-    if (dep.archived) {
-      console.log(chalk.magenta("    Repository is archived"));
+    if (dep.archived) console.log(chalk.magenta("    Repository is archived"));
+  }
+  console.log("");
+}
+
+// ─── Extended layer sections ──────────────────────────────────────────────────
+
+function renderTransitive(issues: SubDependencyIssue[]): void {
+  console.log("");
+  console.log(chalk.bold.red("  🔗  Transitive Dependency Vulnerabilities"));
+  console.log(SHORT);
+  console.log(
+    chalk.gray(
+      "  These vulnerabilities are in indirect (2nd-level) dependencies.",
+    ),
+  );
+
+  for (const issue of issues) {
+    console.log("");
+    console.log(
+      "  " +
+        chalk.bold.white(issue.name) +
+        chalk.gray(`@${issue.version}`) +
+        (issue.requiredBy.length > 0
+          ? chalk.gray(`  ← ${issue.requiredBy.join(", ")}`)
+          : ""),
+    );
+    for (const vuln of issue.vulnerabilities) {
+      console.log(`    ${sevBadge(vuln.severity)}  ${chalk.white(vuln.title)}`);
+      if (vuln.affectedVersions && vuln.affectedVersions !== "unknown")
+        console.log(
+          chalk.gray(`             Affected : ${vuln.affectedVersions}`),
+        );
+      if (vuln.url) console.log(chalk.gray(`             ${vuln.url}`));
     }
   }
   console.log("");
 }
+
+function renderPeerDeps(issues: PeerDependencyIssue[]): void {
+  console.log("");
+  console.log(chalk.bold.yellow("  🤝  Peer Dependency Issues"));
+  console.log(SHORT);
+
+  for (const issue of issues) {
+    console.log("");
+    const statusBadge =
+      issue.status === "missing"
+        ? chalk.bgRed.white.bold(" MISSING      ")
+        : chalk.bgYellow.black.bold(" INCOMPATIBLE ");
+    const optLabel = issue.optional ? chalk.gray(" (optional)") : "";
+    console.log(
+      `  ${statusBadge}  ${chalk.bold.white(issue.peerName)}${optLabel}`,
+    );
+
+    if (issue.status === "incompatible" && issue.installedVersion) {
+      console.log(chalk.gray(`    Installed : ${issue.installedVersion}`));
+    }
+
+    for (const req of issue.requiredBy) {
+      console.log(
+        chalk.gray(`    Required  : ${req.requiredRange}`) +
+          chalk.gray(`  ← ${req.package}@${req.packageVersion}`),
+      );
+    }
+  }
+  console.log("");
+}
+
+function renderHoisted(issues: HoistedDepIssue[]): void {
+  console.log("");
+  console.log(chalk.bold.magenta("  👻  Hoisted / Phantom Dependencies"));
+  console.log(SHORT);
+  console.log(
+    chalk.gray(
+      "  Packages found in node_modules that are not declared in your package.json.",
+    ),
+  );
+
+  for (const issue of issues) {
+    console.log("");
+    const phantomBadge = issue.isPhantom
+      ? chalk.bgMagenta.white(" PHANTOM ")
+      : "";
+    const vulnBadge = issue.severity ? sevBadge(issue.severity) : "";
+    console.log(
+      `  ${phantomBadge}${vulnBadge}  ${chalk.bold.white(issue.name)}` +
+        chalk.gray(`@${issue.version}`) +
+        (issue.requiredBy.length > 0
+          ? chalk.gray(`  ← ${issue.requiredBy.join(", ")}`)
+          : ""),
+    );
+    for (const vuln of issue.vulnerabilities) {
+      console.log(`    ${sevBadge(vuln.severity)}  ${chalk.white(vuln.title)}`);
+      if (vuln.url) console.log(chalk.gray(`             ${vuln.url}`));
+    }
+    if (issue.isPhantom && issue.vulnerabilities.length === 0) {
+      console.log(
+        chalk.gray(
+          "    Undeclared — if your code imports this, add it to package.json",
+        ),
+      );
+    }
+  }
+  console.log("");
+}
+
+// ─── Summary ─────────────────────────────────────────────────────────────────
 
 function renderSummary(summary: ScanResult["summary"]): void {
   console.log("");
@@ -185,8 +315,19 @@ function renderSummary(summary: ScanResult["summary"]): void {
   console.log(SHORT);
   console.log("");
 
-  const rows: [string, number, ChalkInstance][] = [
-    ["Total scanned", summary.total, chalk.white],
+  // Direct deps
+  const directRows: [string, number, ChalkInstance][] = [
+    ["Total direct", summary.total, chalk.white],
+    [
+      "  ↳ optional",
+      summary.optionalScanned,
+      summary.optionalScanned > 0 ? chalk.cyan : chalk.gray,
+    ],
+    [
+      "  ↳ bundled",
+      summary.bundledScanned,
+      summary.bundledScanned > 0 ? chalk.cyan : chalk.gray,
+    ],
     [
       "Outdated",
       summary.outdated,
@@ -204,16 +345,62 @@ function renderSummary(summary: ScanResult["summary"]): void {
     ],
     ["Stale", summary.stale, summary.stale > 0 ? chalk.magenta : chalk.green],
   ];
-
-  for (const [label, value, color] of rows) {
+  for (const [label, value, color] of directRows) {
+    if (label.startsWith("  ↳") && value === 0) continue;
     console.log(`  ${chalk.gray(label.padEnd(20))} ${color(String(value))}`);
   }
 
+  // Extended layers
+  const hasExtended =
+    summary.transitiveVulnerable +
+      summary.peerMissing +
+      summary.peerIncompatible +
+      summary.hoistedVulnerable +
+      summary.phantomCount >
+    0;
+
+  if (hasExtended) {
+    console.log("");
+    console.log(chalk.bold.white("  Extended Layers"));
+    console.log(SHORT);
+    const extRows: [string, number, ChalkInstance][] = [
+      [
+        "Transitive vulns",
+        summary.transitiveVulnerable,
+        summary.transitiveVulnerable > 0 ? chalk.red : chalk.green,
+      ],
+      [
+        "Peer missing",
+        summary.peerMissing,
+        summary.peerMissing > 0 ? chalk.red : chalk.green,
+      ],
+      [
+        "Peer incompatible",
+        summary.peerIncompatible,
+        summary.peerIncompatible > 0 ? chalk.yellow : chalk.green,
+      ],
+      [
+        "Hoisted vulnerable",
+        summary.hoistedVulnerable,
+        summary.hoistedVulnerable > 0 ? chalk.red : chalk.green,
+      ],
+      [
+        "Phantom packages",
+        summary.phantomCount,
+        summary.phantomCount > 0 ? chalk.magenta : chalk.green,
+      ],
+    ];
+    for (const [label, value, color] of extRows) {
+      console.log(`  ${chalk.gray(label.padEnd(20))} ${color(String(value))}`);
+    }
+  }
+
+  // Severity breakdown
   const hasSeverity =
     summary.critical + summary.high + summary.moderate + summary.low > 0;
   if (hasSeverity) {
     console.log("");
-    console.log(chalk.bold.white("  Severity Breakdown"));
+    console.log(chalk.bold.white("  Severity Breakdown (direct deps)"));
     console.log(SHORT);
     if (summary.critical > 0)
       console.log(
@@ -245,12 +432,13 @@ function renderFixSuggestions(suggestions: FixSuggestion[]): void {
   console.log(chalk.bold.green("  🔧  Suggested Fixes"));
   console.log(RULE);
 
-  // Group by type
   const groups: Record<FixSuggestion["type"], FixSuggestion[]> = {
     vulnerability: [],
     deprecated: [],
     outdated: [],
     maintenance: [],
+    peer: [],
+    phantom: [],
   };
   for (const s of suggestions) groups[s.type].push(s);
 
@@ -258,6 +446,8 @@ function renderFixSuggestions(suggestions: FixSuggestion[]): void {
     [FixSuggestion["type"], string, (s: string) => string]
   > = [
     ["vulnerability", "Security", (s) => chalk.bold.red(s)],
+    ["peer", "Peer Deps", (s) => chalk.bold.yellow(s)],
+    ["phantom", "Phantom", (s) => chalk.bold.magenta(s)],
     ["deprecated", "Deprecated", (s) => chalk.bold.yellow(s)],
     ["outdated", "Outdated", (s) => chalk.bold.blue(s)],
     ["maintenance", "Maintenance", (s) => chalk.bold.magenta(s)],
@@ -276,13 +466,10 @@ function renderFixSuggestions(suggestions: FixSuggestion[]): void {
     console.log(SHORT);
 
     for (const item of items) {
-      const priorityBadge = fixPriorityBadge(item.priority);
       console.log("");
-      // Command in a highlighted box
       console.log(
-        `  ${priorityBadge}  ${chalk.bgBlack.cyan(" $ ")} ${chalk.bold.white(item.command)}`,
+        `  ${fixPriorityBadge(item.priority)}  ${chalk.bgBlack.cyan(" $ ")} ${chalk.bold.white(item.command)}`,
       );
-      // Description underneath
       console.log(chalk.gray(`            ${item.description}`));
     }
   }
@@ -317,6 +504,19 @@ function updateBadge(type: string): string {
       return chalk.green("patch");
     default:
       return chalk.gray("—");
+  }
+}
+
+function depTypeBadge(depType: DepType): string {
+  switch (depType) {
+    case "production":
+      return chalk.cyan("prod");
+    case "dev":
+      return chalk.gray("dev");
+    case "optional":
+      return chalk.blue("optional");
+    case "bundled":
+      return chalk.magenta("bundled");
   }
 }
 

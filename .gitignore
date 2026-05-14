@@ -9,3 +9,10 @@ npm-debug.log*
 .idea/
 .vscode/
 *.tsbuildinfo
+
+# Windows reserved device names accidentally created by shell redirections
+NUL
+CON
+AUX
+PRN
+*.tgz

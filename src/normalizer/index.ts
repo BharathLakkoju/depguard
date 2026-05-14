@@ -1,11 +1,12 @@
-import semver from 'semver';
+import semver from "semver";
 import type {
   DependencyInfo,
   RawScanData,
   UpdateType,
   RiskLevel,
   Severity,
-} from '../types/index.js';
+  DepType,
+} from "../types/index.js";
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ export function normalizeScanData(data: RawScanData): DependencyInfo[] {
       vulnerabilities: [],
       updateType,
       isDev: entry.isDev,
+      depType: (entry.depType ?? "production") as DepType,
     };
 
     return dep;
@@ -51,34 +53,37 @@ export function normalizeScanData(data: RawScanData): DependencyInfo[] {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export function determineUpdateType(current: string, latest: string): UpdateType {
-  if (!current || !latest) return 'none';
+export function determineUpdateType(
+  current: string,
+  latest: string,
+): UpdateType {
+  if (!current || !latest) return "none";
 
   const cleanCurrent = semver.coerce(current)?.version;
   const cleanLatest = semver.coerce(latest)?.version;
 
-  if (!cleanCurrent || !cleanLatest) return 'none';
-  if (cleanCurrent === cleanLatest) return 'none';
-  if (!semver.gt(cleanLatest, cleanCurrent)) return 'none';
+  if (!cleanCurrent || !cleanLatest) return "none";
+  if (cleanCurrent === cleanLatest) return "none";
+  if (!semver.gt(cleanLatest, cleanCurrent)) return "none";
 
-  if (semver.major(cleanLatest) > semver.major(cleanCurrent)) return 'major';
-  if (semver.minor(cleanLatest) > semver.minor(cleanCurrent)) return 'minor';
-  if (semver.patch(cleanLatest) > semver.patch(cleanCurrent)) return 'patch';
+  if (semver.major(cleanLatest) > semver.major(cleanCurrent)) return "major";
+  if (semver.minor(cleanLatest) > semver.minor(cleanCurrent)) return "minor";
+  if (semver.patch(cleanLatest) > semver.patch(cleanCurrent)) return "patch";
 
-  return 'none';
+  return "none";
 }
 
 export function normalizeSeverity(severity: string): Severity | null {
   switch (severity.toLowerCase()) {
-    case 'critical':
-      return 'critical';
-    case 'high':
-      return 'high';
-    case 'moderate':
-    case 'medium':
-      return 'moderate';
-    case 'low':
-      return 'low';
+    case "critical":
+      return "critical";
+    case "high":
+      return "high";
+    case "moderate":
+    case "medium":
+      return "moderate";
+    case "low":
+      return "low";
     default:
       return null;
   }
@@ -88,21 +93,26 @@ export function calculateRiskLevel(
   updateType: UpdateType,
   severity: Severity | null,
 ): RiskLevel {
-  if (severity === 'critical') return 'critical';
-  if (severity === 'high') return 'high';
-  if (updateType === 'major') return 'high';
-  if (severity === 'moderate') return 'medium';
-  if (updateType === 'minor') return 'medium';
-  if (updateType === 'patch') return 'low';
-  return 'none';
+  if (severity === "critical") return "critical";
+  if (severity === "high") return "high";
+  if (updateType === "major") return "high";
+  if (severity === "moderate") return "medium";
+  if (updateType === "minor") return "medium";
+  if (updateType === "patch") return "low";
+  return "none";
 }
 
 function severityRank(sev: Severity | null): number {
   switch (sev) {
-    case 'critical': return 4;
-    case 'high':     return 3;
-    case 'moderate': return 2;
-    case 'low':      return 1;
-    default:         return 0;
+    case "critical":
+      return 4;
+    case "high":
+      return 3;
+    case "moderate":
+      return 2;
+    case "low":
+      return 1;
+    default:
+      return 0;
   }
 }
