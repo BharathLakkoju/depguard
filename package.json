@@ -27,8 +27,16 @@
     "vulnerability",
     "deprecated"
   ],
-  "author": "",
+  "author": "Bharath Lakkoju",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bharathlakkoju/depguard"
+  },
+  "homepage": "https://github.com/bharathlakkoju/depguard#readme",
+  "bugs": {
+    "url": "https://github.com/bharathlakkoju/depguard/issues"
+  },
   "dependencies": {
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.3",
