@@ -1,12 +1,18 @@
 // ─── Core Union Types ────────────────────────────────────────────────────────
 
-export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun' | 'deno' | 'unknown';
+export type PackageManager =
+  | "npm"
+  | "pnpm"
+  | "yarn"
+  | "bun"
+  | "deno"
+  | "unknown";
 
-export type Severity = 'critical' | 'high' | 'moderate' | 'low';
+export type Severity = "critical" | "high" | "moderate" | "low";
 
-export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'none';
+export type RiskLevel = "critical" | "high" | "medium" | "low" | "none";
 
-export type UpdateType = 'major' | 'minor' | 'patch' | 'none';
+export type UpdateType = "major" | "minor" | "patch" | "none";
 
 // ─── Domain Models ───────────────────────────────────────────────────────────
 
@@ -17,7 +23,7 @@ export interface Vulnerability {
   affectedVersions: string;
   fixedVersion?: string;
   url?: string;
-  source: 'npm-audit' | 'osv';
+  source: "npm-audit" | "osv";
 }
 
 export interface DependencyInfo {
@@ -61,6 +67,7 @@ export interface ScanResult {
   scanDate: string;
   summary: ScanSummary;
   errors: string[];
+  suggestions: FixSuggestion[];
 }
 
 export interface ScanSummary {
@@ -73,6 +80,21 @@ export interface ScanSummary {
   high: number;
   moderate: number;
   low: number;
+}
+
+// ─── Fix Suggestions ────────────────────────────────────────────────────────
+
+export interface FixSuggestion {
+  /** Category of the issue being fixed */
+  type: "vulnerability" | "deprecated" | "outdated" | "maintenance";
+  /** The specific package this suggestion targets (omitted for batch commands) */
+  packageName?: string;
+  /** The exact command to run */
+  command: string;
+  /** Human-readable description of what the command does */
+  description: string;
+  /** How urgent this fix is */
+  priority: "critical" | "high" | "medium" | "low";
 }
 
 export interface ScanOptions {

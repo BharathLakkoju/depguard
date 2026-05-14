@@ -1,11 +1,12 @@
-import chalk from 'chalk';
-import ora from 'ora';
-import { createProgram } from './cli/program.js';
-import { detectProjectInfo } from './detector/index.js';
-import { runScan } from './scanner/index.js';
-import { analyzeDependencies, computeSummary } from './analyzers/index.js';
-import { generateReport } from './reporters/index.js';
-import type { ScanOptions, ScanResult } from './types/index.js';
+import chalk from "chalk";
+import ora from "ora";
+import { createProgram } from "./cli/program.js";
+import { detectProjectInfo } from "./detector/index.js";
+import { runScan } from "./scanner/index.js";
+import { analyzeDependencies, computeSummary } from "./analyzers/index.js";
+import { generateReport } from "./reporters/index.js";
+import { generateFixSuggestions } from "./fixers/index.js";
+import type { ScanOptions, ScanResult } from "./types/index.js";
 
 // ─── CLI Options (raw from commander) ────────────────────────────────────────
 
@@ -29,18 +30,29 @@ async function scanDirectory(
   const projectInfo = detectProjectInfo(directory);
   const errors: string[] = [];
 
-  if (projectInfo.packageManager === 'unknown') {
+  if (projectInfo.packageManager === "unknown") {
     errors.push(
-      'Could not detect a package manager. Make sure this is a JavaScript/TypeScript project with a lockfile.',
+      "Could not detect a package manager. Make sure this is a JavaScript/TypeScript project with a lockfile.",
     );
     return {
       project: projectInfo.name,
-      packageManager: 'unknown',
+      packageManager: "unknown",
       directory,
       dependencies: [],
       scanDate: new Date().toISOString(),
-      summary: { total: 0, outdated: 0, vulnerable: 0, deprecated: 0, stale: 0, critical: 0, high: 0, moderate: 0, low: 0 },
+      summary: {
+        total: 0,
+        outdated: 0,
+        vulnerable: 0,
+        deprecated: 0,
+        stale: 0,
+        critical: 0,
+        high: 0,
+        moderate: 0,
+        low: 0,
+      },
       errors,
+      suggestions: [],
     };
   }
 
@@ -64,6 +76,11 @@ async function scanDirectory(
     auditOnly: options.auditOnly,
   });
 
+  const suggestions = generateFixSuggestions(
+    dependencies,
+    projectInfo.packageManager,
+  );
+
   return {
     project: projectInfo.name,
     packageManager: projectInfo.packageManager,
@@ -72,6 +89,7 @@ async function scanDirectory(
     scanDate: new Date().toISOString(),
     summary: computeSummary(dependencies),
     errors,
+    suggestions,
   };
 }
 
@@ -84,7 +102,10 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
     markdown: cliOpts.markdown ?? false,
     failOnHigh: cliOpts.failOnHigh ?? false,
     ignore: cliOpts.ignore
-      ? cliOpts.ignore.split(',').map((s) => s.trim()).filter(Boolean)
+      ? cliOpts.ignore
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
       : [],
     workspace: cliOpts.workspace ?? false,
     deep: cliOpts.deep ?? false,
@@ -96,7 +117,7 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
 
   const spinner = silent
     ? null
-    : ora({ text: chalk.cyan('Detecting project…'), spinner: 'dots' }).start();
+    : ora({ text: chalk.cyan("Detecting project…"), spinner: "dots" }).start();
 
   try {
     const projectInfo = detectProjectInfo(directory);
@@ -112,30 +133,44 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
     const results: ScanResult[] = [];
 
     // ── Workspace mode ───────────────────────────────────────────────────────
-    if (options.workspace && projectInfo.isMonorepo && projectInfo.workspaces.length > 0) {
+    if (
+      options.workspace &&
+      projectInfo.isMonorepo &&
+      projectInfo.workspaces.length > 0
+    ) {
       for (const ws of projectInfo.workspaces) {
         const wsSpinner = silent
           ? null
-          : ora({ text: chalk.cyan(`Scanning workspace: ${ws.name}…`), spinner: 'dots' }).start();
+          : ora({
+              text: chalk.cyan(`Scanning workspace: ${ws.name}…`),
+              spinner: "dots",
+            }).start();
 
         const result = await scanDirectory(ws.directory, options);
         results.push(result);
 
         wsSpinner?.succeed(
-          chalk.green(`${ws.name}: ${result.dependencies.length} deps analysed`),
+          chalk.green(
+            `${ws.name}: ${result.dependencies.length} deps analysed`,
+          ),
         );
       }
     } else {
       // ── Single-project mode ────────────────────────────────────────────────
       const scanSpinner = silent
         ? null
-        : ora({ text: chalk.cyan('Scanning dependencies…'), spinner: 'dots' }).start();
+        : ora({
+            text: chalk.cyan("Scanning dependencies…"),
+            spinner: "dots",
+          }).start();
 
       const result = await scanDirectory(directory, options);
       results.push(result);
 
       scanSpinner?.succeed(
-        chalk.green(`Scan complete — ${result.dependencies.length} dependencies analysed`),
+        chalk.green(
+          `Scan complete — ${result.dependencies.length} dependencies analysed`,
+        ),
       );
     }
 
@@ -144,21 +179,25 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
 
     // ── CI failure mode ───────────────────────────────────────────────────────
     if (options.failOnHigh) {
-      const fail = results.some((r) => r.summary.critical > 0 || r.summary.high > 0);
+      const fail = results.some(
+        (r) => r.summary.critical > 0 || r.summary.high > 0,
+      );
       if (fail) {
         if (!silent) {
           console.error(
-            chalk.red('\n  ✗  Exiting with code 1: high or critical issues detected.\n'),
+            chalk.red(
+              "\n  ✗  Exiting with code 1: high or critical issues detected.\n",
+            ),
           );
         }
         process.exit(1);
       }
     }
   } catch (err: unknown) {
-    spinner?.fail(chalk.red('Scan failed'));
+    spinner?.fail(chalk.red("Scan failed"));
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`\n  Error: ${msg}\n`));
-    if (process.env['DEBUG']) console.error(err);
+    if (process.env["DEBUG"]) console.error(err);
     process.exit(1);
   }
 }
@@ -166,14 +205,22 @@ async function performScan(directory: string, cliOpts: CliOpts): Promise<void> {
 // ─── Program setup ────────────────────────────────────────────────────────────
 
 function addSharedFlags(
-  cmd: ReturnType<ReturnType<typeof createProgram>['command']> | ReturnType<typeof createProgram>,
+  cmd:
+    | ReturnType<ReturnType<typeof createProgram>["command"]>
+    | ReturnType<typeof createProgram>,
 ) {
   return cmd
-    .option('--json', 'Output as JSON (machine-readable)')
-    .option('--markdown', 'Output as Markdown')
-    .option('--fail-on-high', 'Exit with code 1 if high/critical issues are found (CI mode)')
-    .option('--ignore <packages>', 'Comma-separated list of packages to skip')
-    .option('--production', 'Only scan production dependencies (skip devDependencies)');
+    .option("--json", "Output as JSON (machine-readable)")
+    .option("--markdown", "Output as Markdown")
+    .option(
+      "--fail-on-high",
+      "Exit with code 1 if high/critical issues are found (CI mode)",
+    )
+    .option("--ignore <packages>", "Comma-separated list of packages to skip")
+    .option(
+      "--production",
+      "Only scan production dependencies (skip devDependencies)",
+    );
 }
 
 async function main(): Promise<void> {
@@ -181,30 +228,32 @@ async function main(): Promise<void> {
 
   // ── Default command: scan current directory ───────────────────────────────
   addSharedFlags(program)
-    .option('--workspace', 'Scan all workspaces in a monorepo')
+    .option("--workspace", "Scan all workspaces in a monorepo")
     .action(async (opts: CliOpts) => {
-      await performScan('.', opts);
+      await performScan(".", opts);
     });
 
   // ── scan [directory] ──────────────────────────────────────────────────────
   addSharedFlags(
     program
-      .command('scan [directory]')
-      .description('Scan dependencies in a specific directory'),
+      .command("scan [directory]")
+      .description("Scan dependencies in a specific directory"),
   )
-    .option('--workspace', 'Scan all workspaces in a monorepo')
-    .option('--deep', 'Include transitive (indirect) dependencies')
+    .option("--workspace", "Scan all workspaces in a monorepo")
+    .option("--deep", "Include transitive (indirect) dependencies")
     .action(async (directory: string | undefined, opts: CliOpts) => {
-      await performScan(directory ?? '.', opts);
+      await performScan(directory ?? ".", opts);
     });
 
   // ── audit ─────────────────────────────────────────────────────────────────
   addSharedFlags(
     program
-      .command('audit')
-      .description('Security-only scan — vulnerabilities only, skips outdated/stale checks'),
+      .command("audit")
+      .description(
+        "Security-only scan — vulnerabilities only, skips outdated/stale checks",
+      ),
   ).action(async (opts: CliOpts) => {
-    await performScan('.', { ...opts, auditOnly: true });
+    await performScan(".", { ...opts, auditOnly: true });
   });
 
   await program.parseAsync(process.argv);

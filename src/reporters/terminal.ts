@@ -1,6 +1,11 @@
 import chalk, { type ChalkInstance } from "chalk";
 import Table from "cli-table3";
-import type { ScanResult, DependencyInfo, Severity } from "../types/index.js";
+import type {
+  ScanResult,
+  DependencyInfo,
+  Severity,
+  FixSuggestion,
+} from "../types/index.js";
 
 const RULE = chalk.gray("─".repeat(60));
 const SHORT = chalk.gray("─".repeat(44));
@@ -54,6 +59,8 @@ function renderResult(result: ScanResult): void {
   if (staleDeps.length > 0) renderMaintenance(staleDeps);
 
   renderSummary(summary);
+
+  if (result.suggestions.length > 0) renderFixSuggestions(result.suggestions);
 }
 
 // ─── Section Renderers ────────────────────────────────────────────────────────
@@ -231,6 +238,60 @@ function renderSummary(summary: ScanResult["summary"]): void {
   console.log("");
 }
 
+// ─── Fix Suggestions ─────────────────────────────────────────────────────────
+
+function renderFixSuggestions(suggestions: FixSuggestion[]): void {
+  console.log("");
+  console.log(chalk.bold.green("  🔧  Suggested Fixes"));
+  console.log(RULE);
+
+  // Group by type
+  const groups: Record<FixSuggestion["type"], FixSuggestion[]> = {
+    vulnerability: [],
+    deprecated: [],
+    outdated: [],
+    maintenance: [],
+  };
+  for (const s of suggestions) groups[s.type].push(s);
+
+  const sections: Array<
+    [FixSuggestion["type"], string, (s: string) => string]
+  > = [
+    ["vulnerability", "Security", (s) => chalk.bold.red(s)],
+    ["deprecated", "Deprecated", (s) => chalk.bold.yellow(s)],
+    ["outdated", "Outdated", (s) => chalk.bold.blue(s)],
+    ["maintenance", "Maintenance", (s) => chalk.bold.magenta(s)],
+  ];
+
+  for (const [key, label, color] of sections) {
+    const items = groups[key];
+    if (items.length === 0) continue;
+
+    console.log("");
+    console.log(
+      color(
+        `  ${label}  (${items.length} suggestion${items.length > 1 ? "s" : ""})`,
+      ),
+    );
+    console.log(SHORT);
+
+    for (const item of items) {
+      const priorityBadge = fixPriorityBadge(item.priority);
+      console.log("");
+      // Command in a highlighted box
+      console.log(
+        `  ${priorityBadge}  ${chalk.bgBlack.cyan(" $ ")} ${chalk.bold.white(item.command)}`,
+      );
+      // Description underneath
+      console.log(chalk.gray(`            ${item.description}`));
+    }
+  }
+
+  console.log("");
+  console.log(RULE);
+  console.log("");
+}
+
 // ─── Badge Helpers ────────────────────────────────────────────────────────────
 
 function sevBadge(severity: Severity): string {
@@ -256,5 +317,18 @@ function updateBadge(type: string): string {
       return chalk.green("patch");
     default:
       return chalk.gray("—");
+  }
+}
+
+function fixPriorityBadge(priority: FixSuggestion["priority"]): string {
+  switch (priority) {
+    case "critical":
+      return chalk.bgRed.white.bold(" CRITICAL ");
+    case "high":
+      return chalk.bgYellow.black.bold(" HIGH     ");
+    case "medium":
+      return chalk.bgHex("#FF8C00").black(" MEDIUM   ");
+    case "low":
+      return chalk.bgBlue.white(" LOW      ");
   }
 }

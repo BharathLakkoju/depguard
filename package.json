@@ -1,10 +1,10 @@
 {
   "name": "@lbharath/depguard",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Universal dependency health scanner CLI for JavaScript ecosystems",
   "type": "module",
   "bin": {
-    "depguard": "./dist/index.js"
+    "depguard": "dist/index.js"
   },
   "scripts": {
     "build": "tsup",
@@ -31,7 +31,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bharathlakkoju/depguard"
+    "url": "git+https://github.com/bharathlakkoju/depguard.git"
   },
   "homepage": "https://github.com/bharathlakkoju/depguard#readme",
   "bugs": {
