@@ -2,7 +2,7 @@
 
 > Universal dependency health scanner CLI for JavaScript ecosystems.
 
-[![npm version](https://img.shields.io/npm/v/depguard)](https://www.npmjs.com/package/depguard)
+[![npm version](https://img.shields.io/npm/v/@lbharath/depguard)](https://www.npmjs.com/package/@lbharath/depguard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 
@@ -38,25 +38,19 @@ abandoned/stale packages — across **npm, pnpm, yarn, bun**, and partial
 ### Global install (recommended for local use)
 
 ```bash
-npm install -g depguard
-```
-
-Then simply run it anywhere:
-
-```bash
-depguard
+npm install -g @lbharath/depguard
 ```
 
 ### One-off usage with npx (no install needed)
 
 ```bash
-npx depguard
+npx @lbharath/depguard
 ```
 
 ### Project dev dependency
 
 ```bash
-npm install --save-dev depguard
+npm install --save-dev @lbharath/depguard
 # then in package.json scripts:
 # "health": "depguard"
 ```
@@ -180,7 +174,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - run: npx depguard --fail-on-high
+      - run: npx @lbharath/depguard --fail-on-high
 ```
 
 ### GitLab CI
@@ -190,7 +184,7 @@ dep-health:
   image: node:20
   script:
     - npm ci
-    - npx depguard --fail-on-high
+    - npx @lbharath/depguard --fail-on-high
 ```
 
 ### JSON report as CI artifact
@@ -296,29 +290,29 @@ Anyone can install it:
 
 ```bash
 # Global install
-npm install -g depguard
+npm install -g @lbharath/depguard
 
 # Zero-install
-npx depguard
+npx @lbharath/depguard
 
 # Project dependency
-npm install --save-dev depguard
+npm install --save-dev @lbharath/depguard
 ```
 
 CDN URLs (available automatically after publishing):
 
 ```
-https://unpkg.com/depguard@latest/dist/index.js
-https://cdn.jsdelivr.net/npm/depguard@latest/dist/index.js
+https://unpkg.com/@lbharath/depguard@latest/dist/index.js
+https://cdn.jsdelivr.net/npm/@lbharath/depguard@latest/dist/index.js
 ```
 
 #### 8. Publishing updates
 
 ```bash
 # Bump the version (choose: patch | minor | major)
-npm version patch   # 0.1.0 → 0.1.1
-npm version minor   # 0.1.0 → 0.2.0
-npm version major   # 0.1.0 → 1.0.0
+npm version patch   # 1.0.11 → 1.0.12
+npm version minor   # 1.0.11 → 1.1.0
+npm version major   # 1.0.11 → 2.0.0
 
 # Then publish
 npm publish

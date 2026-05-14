@@ -1,5 +1,5 @@
 {
-  "name": "depguard",
+  "name": "@lbharath/depguard",
   "version": "1.0.11",
   "description": "Universal dependency health scanner CLI for JavaScript ecosystems",
   "type": "module",
