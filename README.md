@@ -310,7 +310,7 @@ https://cdn.jsdelivr.net/npm/@lbharath/depguard@latest/dist/index.js
 
 ```bash
 # Bump the version (choose: patch | minor | major)
-npm version patch   # 1.0.11 → 1.0.12
+npm version patch   # 1.0.12 → 1.0.13
 npm version minor   # 1.0.11 → 1.1.0
 npm version major   # 1.0.11 → 2.0.0
 

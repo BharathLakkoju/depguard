@@ -32,7 +32,7 @@ function getVersion(): string {
     }
   }
 
-  return "1.0.12";
+  return "1.0.13";
 }
 
 export function createProgram(): Command {
